@@ -1,11 +1,11 @@
 """
-War Robots Screenshot Tracker - Version 13
+War Robots Screenshot Tracker - Version 15.1
 No-code desktop app for turning War Robots team result screenshots into a CSV stat log.
 
-Version 13 changes:
-- Improves adaptive stat parsing when OCR inserts stray digits before the real honor points.
-- More safely separates Honor Points from Damage + Healing on different screen sizes.
-- Keeps M shorthand support, safety checks, Learn Name, needs_review, duplicates, and clear-data features.
+Version 15.1 changes:
+- Stores settings in the user AppData folder instead of next to the EXE.
+- Defaults tracker data folders to the same folder as the downloaded EXE.
+- Lets users choose a tracker data folder so the app can still be customized.
 """
 
 from __future__ import annotations
@@ -42,8 +42,34 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 APP_NAME = "War Robots Screenshot Tracker"
-BASE_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = BASE_DIR / "config.json"
+
+
+def get_app_folder() -> Path:
+    """Return the folder that contains the running app.
+
+    When built as a PyInstaller EXE, this is the folder containing
+    WarRobotsTracker.exe. When running from source, this is the source folder.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+BASE_DIR = get_app_folder()
+
+
+def get_app_data_dir() -> Path:
+    if sys.platform.startswith("win"):
+        base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(base) / "WarRobotsTracker"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "WarRobotsTracker"
+    return Path.home() / ".war_robots_tracker"
+
+
+APP_DATA_DIR = get_app_data_dir()
+DEFAULT_TRACKER_DIR = BASE_DIR
+CONFIG_PATH = APP_DATA_DIR / "config.json"
 SUPPORTED_IMAGES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}
 COLUMNS = [
     "Date Processed",
@@ -75,14 +101,65 @@ class ParseResult:
     review_reason: str = ""
 
 
-def load_config() -> Dict[str, object]:
-    default = {
-        "player_name": "",
+def default_folder_config(root: Optional[Path] = None) -> Dict[str, str]:
+    root = root or DEFAULT_TRACKER_DIR
+    return {
+        "tracker_data_folder": str(root),
+        "screenshot_folder": str(root / "screenshots"),
+        "processed_folder": str(root / "processed"),
+        "duplicates_folder": str(root / "duplicates"),
+        "needs_review_folder": str(root / "needs_review"),
+        "output_folder": str(root / "output"),
+    }
+
+
+def normalize_config_paths(config: Dict[str, object]) -> Dict[str, object]:
+    folders = default_folder_config()
+    # If the user already has a tracker root, keep using it. Otherwise use the app folder.
+    tracker_root_raw = str(config.get("tracker_data_folder") or folders["tracker_data_folder"]).strip()
+    tracker_root = Path(tracker_root_raw).expanduser()
+
+    # V15.1 portable-app migration: if an old V15 config still points to the
+    # previous Documents default and the user has not marked a custom folder,
+    # move the default to the EXE/download folder.
+    old_documents_default = (Path.home() / "Documents" / "War Robots Tracker")
+    if (
+        str(config.get("storage_mode", "")) != "portable_app_folder"
+        and tracker_root == old_documents_default
+        and not bool(config.get("user_chose_tracker_folder", False))
+    ):
+        tracker_root = DEFAULT_TRACKER_DIR
+
+    if not tracker_root.is_absolute():
+        tracker_root = DEFAULT_TRACKER_DIR
+    config["tracker_data_folder"] = str(tracker_root)
+    config["storage_mode"] = "portable_app_folder"
+
+    # Convert old project-relative values like "screenshots" into real user folders.
+    subfolder_names = {
         "screenshot_folder": "screenshots",
         "processed_folder": "processed",
         "duplicates_folder": "duplicates",
         "needs_review_folder": "needs_review",
         "output_folder": "output",
+    }
+    for key, sub in subfolder_names.items():
+        value = str(config.get(key, "")).strip()
+        if not value:
+            config[key] = str(tracker_root / sub)
+            continue
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            config[key] = str(tracker_root / value)
+        else:
+            config[key] = str(path)
+    return config
+
+
+def load_config() -> Dict[str, object]:
+    default = {
+        "player_name": "",
+        **default_folder_config(),
         "match_log_csv": "match_log.csv",
         "auto_watch_seconds": 30,
         "move_processed_files": True,
@@ -95,10 +172,12 @@ def load_config() -> Dict[str, object]:
                 default.update(json.load(f))
         except Exception:
             pass
-    return default
+    return normalize_config_paths(default)
 
 
 def save_config(config: Dict[str, object]) -> None:
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    config = normalize_config_paths(config)
     with CONFIG_PATH.open("w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
@@ -106,11 +185,12 @@ def save_config(config: Dict[str, object]) -> None:
 def resolve_path(value: str) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
-        path = BASE_DIR / path
+        path = DEFAULT_TRACKER_DIR / path
     return path
 
 
 def ensure_folders(config: Dict[str, object]) -> None:
+    config = normalize_config_paths(config)
     for key in ["screenshot_folder", "processed_folder", "duplicates_folder", "needs_review_folder", "output_folder"]:
         resolve_path(str(config[key])).mkdir(parents=True, exist_ok=True)
 
@@ -1317,7 +1397,7 @@ class TrackerApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_NAME)
-        self.geometry("820x640")
+        self.geometry("900x700")
         self.config_data = load_config()
         ensure_folders(self.config_data)
         configure_tesseract(self.config_data)
@@ -1328,7 +1408,7 @@ class TrackerApp(tk.Tk):
 
     def create_widgets(self):
         pad = {"padx": 12, "pady": 6}
-        title = ttk.Label(self, text=f"{APP_NAME} - Version 13", font=("Arial", 18, "bold"))
+        title = ttk.Label(self, text=f"{APP_NAME} - Version 15.1", font=("Arial", 18, "bold"))
         title.pack(anchor="w", **pad)
 
         setup = ttk.LabelFrame(self, text="One-time setup")
@@ -1342,15 +1422,20 @@ class TrackerApp(tk.Tk):
         self.manual_place_var = tk.StringVar(value=str(self.config_data.get("manual_team_place", "")))
         ttk.Entry(setup, textvariable=self.manual_place_var, width=10).grid(row=1, column=1, sticky="w", **pad)
 
-        ttk.Label(setup, text="Screenshot folder:").grid(row=2, column=0, sticky="w", **pad)
-        self.folder_var = tk.StringVar(value=str(resolve_path(str(self.config_data.get("screenshot_folder", "screenshots")))))
-        ttk.Entry(setup, textvariable=self.folder_var, width=60).grid(row=2, column=1, sticky="ew", **pad)
-        ttk.Button(setup, text="Choose folder", command=self.choose_folder).grid(row=2, column=2, **pad)
+        ttk.Label(setup, text="Tracker data folder:").grid(row=2, column=0, sticky="w", **pad)
+        self.tracker_dir_var = tk.StringVar(value=str(resolve_path(str(self.config_data.get("tracker_data_folder", DEFAULT_TRACKER_DIR)))))
+        ttk.Entry(setup, textvariable=self.tracker_dir_var, width=60).grid(row=2, column=1, sticky="ew", **pad)
+        ttk.Button(setup, text="Choose folder", command=self.choose_tracker_folder).grid(row=2, column=2, **pad)
 
-        ttk.Label(setup, text="Tesseract OCR path:").grid(row=3, column=0, sticky="w", **pad)
+        ttk.Label(setup, text="Screenshot folder:").grid(row=3, column=0, sticky="w", **pad)
+        self.folder_var = tk.StringVar(value=str(resolve_path(str(self.config_data.get("screenshot_folder", str(DEFAULT_TRACKER_DIR / "screenshots"))))))
+        ttk.Entry(setup, textvariable=self.folder_var, width=60).grid(row=3, column=1, sticky="ew", **pad)
+        ttk.Button(setup, text="Choose folder", command=self.choose_folder).grid(row=3, column=2, **pad)
+
+        ttk.Label(setup, text="Tesseract OCR path:").grid(row=4, column=0, sticky="w", **pad)
         self.tess_var = tk.StringVar(value=str(self.config_data.get("tesseract_path", "")))
-        ttk.Entry(setup, textvariable=self.tess_var, width=60).grid(row=3, column=1, sticky="ew", **pad)
-        ttk.Button(setup, text="Find file", command=self.choose_tesseract).grid(row=3, column=2, **pad)
+        ttk.Entry(setup, textvariable=self.tess_var, width=60).grid(row=4, column=1, sticky="ew", **pad)
+        ttk.Button(setup, text="Find file", command=self.choose_tesseract).grid(row=4, column=2, **pad)
         setup.columnconfigure(1, weight=1)
 
         actions = ttk.LabelFrame(self, text="Main buttons")
@@ -1363,24 +1448,44 @@ class TrackerApp(tk.Tk):
         ttk.Button(actions, text="Open match_log.csv", command=self.open_csv).grid(row=0, column=4, **pad)
         ttk.Button(actions, text="Open summary", command=self.open_summary).grid(row=0, column=5, **pad)
         ttk.Button(actions, text="Clear data", command=self.clear_data).grid(row=0, column=6, **pad)
+        ttk.Button(actions, text="Open data folder", command=self.open_data_folder).grid(row=0, column=7, **pad)
 
         help_box = ttk.LabelFrame(self, text="Status")
         help_box.pack(fill="x", **pad)
         self.status_var = tk.StringVar(value="")
-        ttk.Label(help_box, textvariable=self.status_var, wraplength=760).pack(anchor="w", **pad)
+        ttk.Label(help_box, textvariable=self.status_var, wraplength=840).pack(anchor="w", **pad)
 
         log_frame = ttk.LabelFrame(self, text="Activity log")
         log_frame.pack(fill="both", expand=True, **pad)
         self.log_text = tk.Text(log_frame, height=16, wrap="word")
         self.log_text.pack(fill="both", expand=True, padx=8, pady=8)
 
-        bottom = ttk.Label(self, text="V13: Better adaptive column separation for different device screenshots, while keeping M shorthand support and V8 safety checks.")
+        bottom = ttk.Label(self, text="V15.1: Portable EXE storage. By default, tracker folders are created beside the app, but you can choose another folder.")
         bottom.pack(anchor="w", **pad)
 
     def log(self, message: str):
         self.log_text.insert("end", f"[{datetime.now().strftime('%H:%M:%S')}] {message}\n")
         self.log_text.see("end")
         self.update_idletasks()
+
+    def choose_tracker_folder(self):
+        folder = filedialog.askdirectory(title="Choose where War Robots Tracker should store its folders")
+        if folder:
+            root = Path(folder)
+            self.tracker_dir_var.set(str(root))
+            self.folder_var.set(str(root / "screenshots"))
+            self.config_data["tracker_data_folder"] = str(root)
+            self.config_data["screenshot_folder"] = str(root / "screenshots")
+            self.config_data["processed_folder"] = str(root / "processed")
+            self.config_data["duplicates_folder"] = str(root / "duplicates")
+            self.config_data["needs_review_folder"] = str(root / "needs_review")
+            self.config_data["output_folder"] = str(root / "output")
+            self.config_data["user_chose_tracker_folder"] = True
+            self.config_data["storage_mode"] = "portable_app_folder"
+            save_config(self.config_data)
+            ensure_folders(self.config_data)
+            self.refresh_status()
+            self.log("Tracker data folder updated.")
 
     def choose_folder(self):
         folder = filedialog.askdirectory(title="Choose your War Robots screenshot folder")
@@ -1400,8 +1505,15 @@ class TrackerApp(tk.Tk):
             messagebox.showerror("Invalid row number", "Manual team row must be blank or a number from 1 to 6.")
             return
         self.config_data["manual_team_place"] = manual_place
-        self.config_data["screenshot_folder"] = self.folder_var.get().strip()
+        tracker_root = Path(self.tracker_dir_var.get().strip() or str(DEFAULT_TRACKER_DIR)).expanduser()
+        self.config_data["tracker_data_folder"] = str(tracker_root)
+        self.config_data["screenshot_folder"] = self.folder_var.get().strip() or str(tracker_root / "screenshots")
+        self.config_data["processed_folder"] = str(tracker_root / "processed")
+        self.config_data["duplicates_folder"] = str(tracker_root / "duplicates")
+        self.config_data["needs_review_folder"] = str(tracker_root / "needs_review")
+        self.config_data["output_folder"] = str(tracker_root / "output")
         self.config_data["tesseract_path"] = self.tess_var.get().strip()
+        self.config_data["storage_mode"] = "portable_app_folder"
         save_config(self.config_data)
         ensure_folders(self.config_data)
         configure_tesseract(self.config_data)
@@ -1419,7 +1531,7 @@ class TrackerApp(tk.Tk):
         filetypes = [("Image files", "*.png *.jpg *.jpeg *.webp *.bmp *.tiff"), ("All files", "*")]
         path = filedialog.askopenfilename(
             title="Choose a clear War Robots result screenshot",
-            initialdir=self.folder_var.get().strip() or str(BASE_DIR),
+            initialdir=self.folder_var.get().strip() or str(DEFAULT_TRACKER_DIR),
             filetypes=filetypes,
         )
         if not path:
@@ -1536,6 +1648,10 @@ class TrackerApp(tk.Tk):
         except Exception as e:
             self.log(f"Clear data error: {e}")
             messagebox.showerror("Clear data error", str(e))
+
+    def open_data_folder(self):
+        ensure_folders(self.config_data)
+        open_file(resolve_path(str(self.config_data.get("tracker_data_folder", DEFAULT_TRACKER_DIR))))
 
     def open_csv(self):
         path = get_output_csv(self.config_data)

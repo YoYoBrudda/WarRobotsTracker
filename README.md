@@ -1,97 +1,66 @@
-# War Robots Screenshot Tracker - Version 11
+# War Robots Screenshot Tracker - Version 15.1
 
-This is the no-code-friendly desktop version of the War Robots screenshot tracker.
+This is the EXE-friendly version of the War Robots screenshot tracker.
 
-## What V11 does
+## What it does
 
 - Reads War Robots TEAM result screenshots
-- Tracks:
-  - Win / Loss / Draw
-  - Player Name
-  - Team Place, from 1 to 6
-  - Honor Points
-  - Damage + Healing
-  - Assists
-  - Kills
-  - Beacons
-- Creates `output/match_log.csv`
-- Creates `output/summary.html`
-- Adds Average Place to the summary
-- Moves duplicate screenshots into the `duplicates` folder instead of processing them twice
-- Moves uncertain/wrong-player screenshots into the `needs_review` folder instead of logging bad data
-- Saves missing beacon values as `N/A`
-- Excludes `N/A` beacon values from Average Beacons
+- Tracks win/loss/draw, player name, team place, honor points, damage + healing, assists, kills, and beacons
+- Supports damage values like `10.3M` by converting them to real numbers
+- Creates a `match_log.csv` and `summary.html`
+- Moves duplicate screenshots to `duplicates`
+- Moves uncertain screenshots to `needs_review`
+- Lets you clear saved tracker data with a confirmation prompt
 
+## New in V15.1
 
-## New in V11
+The app no longer depends on folders sitting next to the program file.
 
-War Robots sometimes shortens very large Damage + Healing values using **M** for million. V11 converts these automatically:
+On first launch, it creates a tracker folder here by default:
 
-- `10.3M` becomes `10,300,000`
-- `10.7 M` becomes `10,700,000`
-- `3M` becomes `3,000,000`
+`the same folder as WarRobotsTracker.exe/`
 
-This keeps averages accurate in the summary dashboard.
+Inside that folder, it creates:
 
-## What changed in V11
+```text
+screenshots/
+processed/
+duplicates/
+needs_review/
+output/
+```
 
-V11 keeps the V8 row/manual-name fixes and adds support for damage values shown with M, such as 10.3M or 10.7 M.
+You can also choose a different **Tracker data folder** inside the app. This is the folder where all tracker files will live.
 
-- The manual row box is now used only for **Learn name from screenshot**.
-- Normal processing tries to find your saved player name in the ally table first.
-- If your saved name is a normal English/numeric name and the screenshot does not contain it, the file is moved to `needs_review` instead of being logged incorrectly.
-- For symbol-heavy or non-English names, the app can still fall back to **YOUR PLACE ON THE TEAM**.
-- If Learn Name cannot OCR the name, it now lets you type and save the name manually.
+Settings are saved in your Windows AppData folder, so your setup stays saved even when you download a newer version of the app.
 
-## How to use on Windows
+## How to use
 
-1. Extract the ZIP.
-2. Double-click `Launch_Windows.bat`.
-3. Enter your exact in-game name, or click **Learn name from screenshot** after setup.
-4. Choose your screenshot folder.
-5. For Tesseract, click `Find file` and choose `tesseract.exe`.
-6. Click `Save setup`.
-7. Click `Process screenshots now`.
+1. Open `WarRobotsTracker.exe`.
+2. Choose a **Tracker data folder**, or keep the default.
+3. Put War Robots result screenshots into the `screenshots` folder.
+4. Enter your in-game name, or use **Learn name from screenshot**.
+5. Select your Tesseract OCR path if needed.
+6. Click **Process screenshots now**.
+7. Click **Open summary** to view your stats.
 
-## Tesseract note
+## Tesseract OCR
 
-Tesseract OCR is still required. If it is installed in a folder like:
+Tesseract OCR is still required.
+
+If Tesseract is installed at:
 
 `C:\Users\YOURNAME\AppData\Local\Programs\Tesseract-OCR`
 
-choose this file inside that folder:
+choose:
 
-`tesseract.exe`
+`C:\Users\YOURNAME\AppData\Local\Programs\Tesseract-OCR\tesseract.exe`
 
-V11 can also accept the folder itself and will try to find `tesseract.exe` automatically.
+The app can also usually accept the folder itself and find `tesseract.exe` automatically.
 
-## Important screenshot rule
+## Notes
 
-Use screenshots from the War Robots TEAM results screen, with the team table visible.
-Do not crop the screenshot manually.
-
-## Duplicate screenshot rule
-
-If the same screenshot is uploaded again, V11 will move it into the `duplicates` folder and skip it.
-This works even if the duplicate screenshot has a different filename.
-
-## Needs review folder
-
-If a screenshot probably belongs to a different player, or the app cannot safely read the correct row, V11 moves it into `needs_review`. Check those screenshots manually instead of trusting bad stats.
-
-## Clear saved data
-
-Open the app and click **Clear data** if you want to reset your tracker. The app will ask you to confirm first, so accidental clicks will not erase your saved stats. This clears the CSV, summary page, and duplicate tracking history, but it does not delete your screenshots or processed image files.
-
----
-
-## V14 executable build note
-
-This version includes files for building a single Windows executable:
-
-- `WarRobotsTracker.spec`
-- `build_windows_exe.bat`
-- `.github/workflows/build-windows-exe.yml`
-- `docs/BUILD_SINGLE_EXE.md`
-
-The final public download should be `WarRobotsTracker.exe`. Tesseract OCR may still need to be installed separately because it is the external OCR engine used by the app.
+- Use full War Robots TEAM result screenshots.
+- Use PNG screenshots when possible.
+- Avoid compressed Discord/YouTube screenshots when possible.
+- If a file goes to `needs_review`, the app was not confident enough to log it safely.

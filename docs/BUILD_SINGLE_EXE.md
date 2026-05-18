@@ -1,27 +1,11 @@
-# Building the single-file Windows executable
+# Build Single EXE
 
-This project is ready to build into `WarRobotsTracker.exe`.
+This project includes a GitHub Actions workflow that builds `WarRobotsTracker.exe` on Windows.
 
-## Easiest path: GitHub Actions
+1. Upload this project to GitHub.
+2. Go to the **Actions** tab.
+3. Run **Build Windows EXE**.
+4. Download the `WarRobotsTracker-Windows` artifact.
+5. Publish the resulting ZIP or EXE in GitHub Releases.
 
-1. Upload this folder to a GitHub repository.
-2. Go to the repository's **Actions** tab.
-3. Open **Build Windows EXE**.
-4. Click **Run workflow**.
-5. Download the finished artifact: `WarRobotsTracker-Windows.zip`.
-6. Upload that ZIP or the included `WarRobotsTracker.exe` to your GitHub Releases page.
-
-## Local Windows build
-
-Double-click:
-
-`build_windows_exe.bat`
-
-The built executable will appear at:
-
-`dist/WarRobotsTracker.exe`
-
-## Important OCR note
-
-The executable bundles the Python app and Python packages, but Tesseract OCR is still a separate OCR engine.
-Users may still need to install Tesseract OCR using `Install_Tesseract_Windows.ps1`, then select the Tesseract path in the app if it is not auto-detected.
+V15.1 stores user settings in AppData and creates tracker data folders in the user's chosen folder, so the EXE can be distributed as a standalone app.
